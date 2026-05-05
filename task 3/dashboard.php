@@ -1,7 +1,7 @@
 <?php
 /**
  * User Dashboard
- * Fully Secured and English Version
+ * Fully Secured,  & Role-Based
  */
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
@@ -18,9 +18,11 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $username = "";
 $profile_pic = "default.png";
+$role_id = 2; // Default to normal user
 
 // Fetch user info from database using Prepared Statement
-$query = "SELECT username, profile_pic FROM users WHERE id = ?";
+// UPDATE: Added role_id in the SELECT query to check if user is Admin
+$query = "SELECT username, profile_pic, role_id FROM users WHERE id = ?";
 $stmt = mysqli_prepare($conn, $query);
 
 if ($stmt) {
@@ -31,6 +33,7 @@ if ($stmt) {
     if ($user = mysqli_fetch_assoc($result)) {
         $username = $user['username'];
         $profile_pic = $user['profile_pic'];
+        $role_id = $user['role_id']; // Fetching role to determine permissions
     } else {
         $username = $_SESSION['username']; // Fallback
     }
@@ -60,7 +63,13 @@ if ($stmt) {
         <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
 
         <div class="actions" style="display: flex; flex-direction: column; gap: 15px;">
-            <a href="users_list.php" style="background-color: #007bff; color: white; padding: 10px; text-decoration: none; border-radius: 5px;">View All Users (CRUD)</a>
+            
+            <?php 
+            // ROLE-BASED ACCESS LOGIC: Show 'View All Users' ONLY if the user is an Admin (role_id == 1)
+            if ($role_id == 1) { 
+            ?>
+                <a href="users_list.php" style="background-color: #007bff; color: white; padding: 10px; text-decoration: none; border-radius: 5px;">View All Users (Admin Only)</a>
+            <?php } ?>
             
             <a href="edit_profile.php?id=<?php echo $user_id; ?>" style="background-color: #28a745; color: white; padding: 10px; text-decoration: none; border-radius: 5px;">Edit My Profile</a>
             

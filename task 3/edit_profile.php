@@ -1,7 +1,7 @@
 <?php
 /**
  * Edit Profile Page (CRUD - Update)
- * Purpose: Allow users to update their username and profile picture.
+ * English version with Admin-logic fixed.
  */
 
 session_start();
@@ -13,11 +13,19 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-$user_id = $_SESSION['user_id'];
+// FIX: Determine which user to edit. 
+// If an 'id' is in the URL and the person is an Admin, use that ID.
+// Otherwise, use the logged-in user's own ID.
+if (isset($_GET['id']) && $_SESSION['role_id'] == 1) {
+    $user_id = $_GET['id'];
+} else {
+    $user_id = $_SESSION['user_id'];
+}
+
 $success_msg = "";
 $error_msg = "";
 
-// 2. Fetch current user data
+// 2. Fetch target user data
 $query = "SELECT username, email, profile_pic FROM users WHERE id = ?";
 $stmt = mysqli_prepare($conn, $query);
 mysqli_stmt_bind_param($stmt, "i", $user_id);
@@ -25,38 +33,66 @@ mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 $user = mysqli_fetch_assoc($result);
 
+if (!$user) {
+    die("User not found!");
+}
+mysqli_stmt_close($stmt);
+
 // 3. Handle Update Form Submission
 if (isset($_POST['update_btn'])) {
     $new_username = mysqli_real_escape_string($conn, $_POST['username']);
-    $profile_pic = $user['profile_pic']; // Keep old pic by default
+    $profile_pic = $user['profile_pic']; 
+    $upload_ok = true; 
 
-    // Handle New Image Upload if selected
+    // Image Upload Validation
     if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == 0) {
-        $target_dir = "uploads/";
-        $file_name = time() . "_" . basename($_FILES["profile_pic"]["name"]);
-        $target_file = $target_dir . $file_name;
+        $allowed_types = ['jpg', 'jpeg', 'png'];
+        $max_size = 2 * 1024 * 1024;
+        
+        $file_name = $_FILES["profile_pic"]["name"];
+        $file_size = $_FILES["profile_pic"]["size"];
+        $tmp_name = $_FILES["profile_pic"]["tmp_name"];
+        $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
 
-        if (move_uploaded_file($_FILES["profile_pic"]["tmp_name"], $target_file)) {
-            $profile_pic = $file_name; // Update with new filename
+        if (!in_array($file_ext, $allowed_types)) {
+            $error_msg = "Invalid format! Only JPG, JPEG, and PNG allowed.";
+            $upload_ok = false;
+        } elseif ($file_size > $max_size) {
+            $error_msg = "File too large! Max size 2MB.";
+            $upload_ok = false;
+        } else {
+            $target_dir = "uploads/";
+            $new_file_name = time() . "_" . basename($file_name);
+            $target_file = $target_dir . $new_file_name;
+
+            if (move_uploaded_file($tmp_name, $target_file)) {
+                $profile_pic = $new_file_name;
+            } else {
+                $error_msg = "Upload failed.";
+                $upload_ok = false;
+            }
         }
     }
 
-    // Update Database using Prepared Statement
-    $update_query = "UPDATE users SET username = ?, profile_pic = ? WHERE id = ?";
-    $update_stmt = mysqli_prepare($conn, $update_query);
-    
-    if ($update_stmt) {
-        mysqli_stmt_bind_param($update_stmt, "ssi", $new_username, $profile_pic, $user_id);
-        if (mysqli_stmt_execute($update_stmt)) {
-            $_SESSION['username'] = $new_username; // Update session
-            $success_msg = "Profile updated successfully!";
-            // Refresh local user data
-            $user['username'] = $new_username;
-            $user['profile_pic'] = $profile_pic;
-        } else {
-            $error_msg = "Update failed. Please try again.";
+    if ($upload_ok) {
+        $update_query = "UPDATE users SET username = ?, profile_pic = ? WHERE id = ?";
+        $update_stmt = mysqli_prepare($conn, $update_query);
+        
+        if ($update_stmt) {
+            mysqli_stmt_bind_param($update_stmt, "ssi", $new_username, $profile_pic, $user_id);
+            if (mysqli_stmt_execute($update_stmt)) {
+                // Only update session if editing OWN profile
+                if ($user_id == $_SESSION['user_id']) {
+                    $_SESSION['username'] = $new_username;
+                }
+                $success_msg = "Profile updated successfully!";
+                $user['username'] = $new_username;
+                $user['profile_pic'] = $profile_pic;
+            } else {
+                $error_msg = "Update failed.";
+            }
+            mysqli_stmt_close($update_stmt);
         }
-        mysqli_stmt_close($update_stmt);
     }
 }
 ?>
@@ -69,16 +105,17 @@ if (isset($_POST['update_btn'])) {
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="edit-container" style="max-width: 400px; margin: 50px auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px;">
-        <h2>Edit Your Profile</h2>
+    <div class="edit-container" style="max-width: 400px; margin: 50px auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; background-color: #fff;">
+        <h2>Edit Profile (ID: <?php echo $user_id; ?>)</h2>
         
-        <?php if($success_msg) echo "<p style='color:green;'>$success_msg</p>"; ?>
-        <?php if($error_msg) echo "<p style='color:red;'>$error_msg</p>"; ?>
+        <?php if($success_msg) echo "<p style='color:green; font-weight:bold;'>$success_msg</p>"; ?>
+        <?php if($error_msg) echo "<p style='color:red; font-weight:bold;'>$error_msg</p>"; ?>
 
-        <form action="edit_profile.php" method="POST" enctype="multipart/form-data">
+        <!-- Note: We keep the id in the URL to ensure it updates the right person -->
+        <form action="edit_profile.php?id=<?php echo $user_id; ?>" method="POST" enctype="multipart/form-data">
             <div style="margin-bottom: 15px;">
-                <label>Current Profile Photo:</label><br>
-                <img src="uploads/<?php echo $user['profile_pic']; ?>" width="80" height="80" style="border-radius: 50%; margin-top: 5px;">
+                <label>Current Photo:</label><br>
+                <img src="uploads/<?php echo htmlspecialchars($user['profile_pic']); ?>" width="80" height="80" style="border-radius: 50%; margin-top: 5px; border: 2px solid #007bff; object-fit: cover;">
             </div>
 
             <div style="margin-bottom: 15px;">
@@ -87,13 +124,13 @@ if (isset($_POST['update_btn'])) {
             </div>
 
             <div style="margin-bottom: 15px;">
-                <label>Change Profile Photo (Optional):</label><br>
-                <input type="file" name="profile_pic" accept="image/*">
+                <label>New Photo (Max 2MB):</label><br>
+                <input type="file" name="profile_pic" accept="image/jpeg, image/png">
             </div>
 
-            <button type="submit" name="update_btn" style="background: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;">Update Profile</button>
+            <button type="submit" name="update_btn" style="background: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; width: 100%;">Update Data</button>
             <br><br>
-            <a href="dashboard.php">Back to Dashboard</a>
+            <a href="users_list.php" style="display: block; text-align: center;">Back to List</a>
         </form>
     </div>
 </body>

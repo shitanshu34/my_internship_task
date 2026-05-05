@@ -2,6 +2,7 @@
 /**
  * Login Action Handler
  * Purpose: Authenticate user credentials and redirect to dashboard.
+ * Security Update: Added Role-Based Session ID
  */
 
 ob_start(); // Prevents header redirection errors
@@ -33,6 +34,7 @@ if (isset($_POST['login_btn'])) {
                 // 3. Set Session variables for the logged-in user
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['username'] = $user['username'];
+                $_SESSION['role_id'] = $user['role_id']; // <-- YE LINE ADD HUI HAI (Crucial for Admin Access)
                 
                 // 4. Redirect to Dashboard upon success
                 header("Location: dashboard.php");
